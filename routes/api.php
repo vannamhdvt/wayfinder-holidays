@@ -10,3 +10,4 @@ Route::get('/user', function (Request $request) {
 
 Route::get('/enquiries', [EnquiryController::class, 'index']);
 Route::post('/enquiries', [EnquiryController::class, 'store']);
+Route::patch('/enquiries/{enquiry}/status', [EnquiryController::class, 'updateStatus']);

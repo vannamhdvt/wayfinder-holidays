@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\EnquiryStatus;
 use Illuminate\Database\Eloquent\Model;
 
 class TourEnquiry extends Model
@@ -14,8 +15,15 @@ class TourEnquiry extends Model
         'phone',
         'preferred_month',
         'message',
-        'status',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'status' => EnquiryStatus::class,
+        ];
+    }
+
     public function tour() {
         return $this->belongsTo(Tour::class);
     }

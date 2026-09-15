@@ -361,3 +361,151 @@ API Resource (vấn đề 14). Nhưng thêm field thì an toàn, còn đổi ho�
 
 Lý do: tôi chưa biết trang admin được viết bằng gì và đọc những field nào. Thay đổi
 kiểu này phải đi kèm với frontend thực tế.
+
+---
+
+## Phần B - Triển khai và kiểm thử
+
+### Những thay đổi đã thực hiện
+
+**File mới**
+
+| File | Vai trò |
+|---|---|
+| `app/Enums/EnquiryStatus.php` | Backed enum định nghĩa 4 trạng thái và các transition hợp lệ - nguồn duy nhất của state machine |
+| `app/Http/Requests/StoreEnquiryRequest.php` | Validate dữ liệu gửi từ form công khai |
+| `app/Http/Requests/UpdateEnquiryStatusRequest.php` | Validate giá trị `status` gửi lên endpoint đổi trạng thái |
+| `app/Http/Resources/EnquiryResource.php` | Định nghĩa hình dạng response, dùng chung cho cả ba endpoint |
+| `tests/Feature/EnquiryTest.php` | Hai feature test |
+| `database/seeders/TourSeeder.php` | Dữ liệu tour mẫu |
+
+**File sửa**
+
+`app/Models/TourEnquiry.php`
+- Bỏ `status` khỏi `$fillable`
+- Thêm `casts()` để Eloquent chuyển `status` thành enum
+
+`app/Http/Controllers/EnquiryController.php`
+- `index()`: thêm `with('tour')`, `latest()`, `paginate(25)`, trả `EnquiryResource`
+- `store()`: nhận `StoreEnquiryRequest`, dùng `validated()`, gán `status` cứng trong code
+- Thêm `updateStatus()` cho endpoint PATCH
+
+`routes/api.php`
+- Thêm `PATCH /api/enquiries/{enquiry}/status`
+
+**Đối chiếu với các vấn đề ở A.1**
+
+| Vấn đề | Cách xử lý |
+|---|---|
+| 1 - Mass assignment | Bỏ `status` khỏi `$fillable`, và FormRequest không có rule cho `status` |
+| 3 - Không validate | `StoreEnquiryRequest` |
+| 4 - 500 thay vì 422 | Validation chặn trước khi chạm database |
+| 5 - Chuỗi rỗng | `required` bắt trước khi `ConvertEmptyStringsToNull` gây hại |
+| 6 - `tour_id` chỉ chặn ở DB | Rule `exists:tours,id` |
+| 7 - Độ dài đầu vào | Rule `max` trên mọi trường chuỗi |
+| 8 - `status` tự do | Enum + `casts()` + `Rule::enum()` |
+| 9 - Không ràng buộc transition | `EnquiryStatus::canTransitionTo()` |
+| 10 - `tour->name` null | `$this->tour?->name` trong Resource |
+| 11 - N+1 | `with('tour')` |
+| 12 - Không phân trang | `paginate(25)` |
+| 14, 15, 16 - Response | `EnquiryResource` dùng chung, bổ sung `phone`, `message`, `created_at` |
+
+Vấn đề 2 (thiếu xác thực) và 13 (thiếu index) cố tình chưa làm - lý do ở A.3 và A.4.
+
+**Hai lớp bảo vệ cho `status`.** Bỏ khỏi `$fillable` và không khai rule trong
+FormRequest. Một lớp hỏng thì vẫn còn lớp kia. Vì `$fillable` không còn `status`,
+`store()` phải gán qua property (`$enquiry->status = ...`) thay vì truyền vào
+`create()` - nếu truyền vào mảng thì Eloquent sẽ âm thầm bỏ qua và trạng thái ban đầu
+sẽ phụ thuộc giá trị default của cột, không phải vào code.
+
+**Kết quả kiểm chứng**
+
+| Request | Trước | Sau |
+|---|---|---|
+| POST hợp lệ | 201 | 201, `status` = `new` |
+| POST kèm `"status":"booked"` | 201, lưu `booked` | 201, `status` vẫn `new` |
+| POST email sai định dạng | 201 | 422 |
+| POST `tour_id` không tồn tại | 500 | 422 |
+| POST body rỗng | 500 | 422, kèm danh sách field thiếu |
+| PATCH `new → contacted` | - | 200, trả enquiry đã cập nhật |
+| PATCH `contacted → new` | - | 422, DB không đổi |
+| PATCH `booked → contacted` | - | 422, DB không đổi |
+| PATCH `closed → *` | - | 422, báo đây là trạng thái cuối |
+| PATCH `"status":"con_meo"` | - | 422 |
+| PATCH id không tồn tại | - | 404 |
+
+### Giả định khi triển khai
+
+**Field bắt buộc.** `tour_id`, `name`, `email` bắt buộc; `phone`, `preferred_month`,
+`message` tuỳ chọn. Suy ra từ migration (ba cột sau là nullable), không phải từ yêu
+cầu nghiệp vụ. Như đã nêu ở A.3, đây là điểm cần Sales xác nhận.
+
+**Độ chặt của email.** Dùng `email:rfc`, không dùng `dns` - rule `dns` truy vấn DNS
+thật nên làm test chậm và phụ thuộc mạng. Đổi lại, email đúng cú pháp nhưng không tồn
+tại vẫn lọt; xác minh thật sự cần cơ chế gửi thư xác nhận, không phải validation.
+
+**Giới hạn độ dài.** `name`, `email` 255 khớp VARCHAR trong migration; `message` 2000
+và `phone` 30 là con số tôi tự chọn. Không dựa vào database để enforce, vì SQLite và
+MySQL hành xử khác nhau (vấn đề 7 ở A.1).
+
+**Chuyển sang chính trạng thái hiện tại bị từ chối.** `booked → booked` trả 422. Đề
+liệt kê đúng 4 transition hợp lệ và yêu cầu mọi thứ khác bị từ chối; tự chuyển về
+chính nó không nằm trong danh sách đó.
+
+**`closed` là trạng thái cuối.** Không có transition nào đi ra từ `closed`, kể cả quay
+lại `contacted`. Suy trực tiếp từ danh sách 4 transition của đề.
+
+**Phân trang làm đổi hình dạng response.** `GET /api/enquiries` giờ trả object có
+`data`, `links`, `meta` thay vì mảng phẳng. Đây là breaking change với frontend đang
+dùng. Tôi vẫn làm vì đề yêu cầu xử lý endpoint này và vì nguy cơ hết bộ nhớ là thật,
+nhưng ngoài thực tế đây là thay đổi phải thống nhất với người làm frontend trước -
+đúng như đã nêu ở A.4 mục 4.
+
+**Endpoint PATCH chưa có xác thực.** `authorize()` trả `true`. Đây là endpoint nội bộ
+của Sales nên lẽ ra phải có auth, nhưng như đã nêu ở A.3, tôi chưa biết hệ thống đăng
+nhập hiện tại hoạt động thế nào. Khi có thông tin thì chỉ cần gắn middleware vào route
+và sửa `authorize()`.
+
+**Chưa dọn dữ liệu cũ.** Các record đang có `status` sai vẫn nguyên trạng - lý do ở
+A.4 mục 1.
+
+### Hai test đã viết và lý do chọn
+
+**1. `test_status_sent_by_the_public_form_is_ignored`**
+
+Gửi form kèm `"status":"booked"`, khẳng định response trả `new` và trong database cũng
+là `new`.
+
+Chọn vì đây là lỗ hổng duy nhất **hỏng mà không phát ra tiếng động**. Request vẫn trả
+201, dữ liệu vẫn vào database, không có lỗi nào được ghi - nhìn từ bên ngoài mọi thứ
+bình thường, chỉ có báo cáo doanh số là sai. Nó cũng là lỗ hổng dễ mở lại nhất: chỉ
+cần ai đó thêm `'status'` vào `$fillable` cho tiện là hở ngay, mà thay đổi đó trông
+hoàn toàn vô hại khi review.
+
+**2. `test_an_invalid_status_transition_is_rejected_and_leaves_the_record_unchanged`**
+
+Dựng enquiry ở `booked`, thử chuyển sang `contacted`, khẳng định trả 422 **và** đọc
+lại từ database thấy vẫn là `booked`.
+
+Chọn vì vế thứ hai quan trọng ngang vế thứ nhất. Một cách viết khác - lưu trước rồi
+mới kiểm tra, hoặc kiểm tra rồi quên rollback - vẫn trả về đúng mã lỗi nhưng đã làm
+hỏng dữ liệu. Test chỉ kiểm tra status code sẽ pass trong cả hai trường hợp. Dùng
+`fresh()` để đọc lại từ database chứ không tin object đang giữ trong bộ nhớ.
+
+Hai test này bảo vệ đúng hai điều mà hỏng thì không ai biết. Những hành vi khác -
+email sai bị chặn, `tour_id` không tồn tại bị chặn - nếu hỏng thì lộ ra ngay ở lần thử
+đầu tiên, nên ít cần một test canh giữ hơn.
+
+---
+
+## Phần C - Thư trả lời CEO
+
+---
+
+## Phần D - Kinh nghiệm và tự đánh giá
+
+### D.1 Một hệ thống tôi từng xây dựng
+
+### D.2 Tự đánh giá bài nộp
+
+### D.3 Năm câu hỏi của tôi
