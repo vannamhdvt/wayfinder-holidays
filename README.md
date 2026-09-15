@@ -500,12 +500,180 @@ email sai bị chặn, `tour_id` không tồn tại bị chặn - nếu hỏng t
 
 ## Phần C - Thư trả lời CEO
 
+Tour enquiries - tình hình hiện tại và các bước tiếp theo
+
+Chào anh/chị,
+
+Tôi đã nắm được thông tin và đang xử lý ngay. Tôi hiểu mức độ
+nghiêm trọng: nếu có khách gửi yêu cầu mà không ai liên hệ lại trong ba ngày, đó là
+thông tin của khách đã biến mất, không chỉ là một lỗi kỹ thuật.
+
+Việc đầu tiên tôi làm sáng nay là kiểm tra xem các yêu cầu đó có được lưu vào hệ thống
+hay không. Câu trả lời quyết định mọi thứ còn lại, và nó chia tình huống thành hai
+hướng rất khác nhau:
+
+- Nếu dữ liệu vẫn còn, chúng ta chưa mất thông tin của khách nào. Tôi sẽ trích danh sách toàn bộ
+  yêu cầu ba ngày qua và gửi cho Sales trong sáng nay để gọi lại ngay hôm nay. Vấn đề
+  khi đó nằm ở khâu thông báo, không phải ở form.
+- Nếu dữ liệu không được lưu, tôi sẽ ưu tiên khôi phục những gì còn lấy lại được từ
+  log máy chủ trước, rồi mới sửa nguyên nhân.
+
+Tôi chưa biết nguyên nhân nên chưa thể hứa thời điểm sửa xong. Điều tôi cam kết được
+là trước giờ nghỉ trưa nay tôi sẽ báo cáo lại với kết luận về nguyên nhân và một mốc thời gian
+cụ thể.
+
+Hai điều tôi muốn nói thêm: tôi mới join dự án được hai tuần và chưa đọc hết hệ thống, và
+đồng nghiệp - người hiểu module này - đang nghỉ dài hạn. Nên tôi sẽ đi chậm hơn
+bình thường ở khâu xác định nguyên nhân, nhưng sẽ không để việc đó làm chậm khâu liên
+hệ lại với khách.
+
+Nếu anh/chị muốn trao đổi trực tiếp, tôi có thể gọi bất cứ lúc nào trong sáng nay.
+
+Trân trọng,
+Trần Văn Nam
+
 ---
 
 ## Phần D - Kinh nghiệm và tự đánh giá
 
 ### D.1 Một hệ thống tôi từng xây dựng
 
+**Zotasell** - ứng dụng upsell/cross-sell cho merchant trên Shopify.
+
+**1. Hệ thống làm gì**
+
+Merchant cấu hình các rule khuyến mãi (mua X tặng Y, bundle, giảm theo số lượng) trong
+trang admin của ứng dụng. Ngoài storefront, các widget gợi ý sản phẩm hiển thị trong
+trang sản phẩm, trang giỏ và trang chủ; khi khách thêm hàng vào giỏ, mức giảm giá tương
+ứng được áp ngay trong giỏ và giữ nguyên tới checkout.
+
+**2. Phần tôi chịu trách nhiệm**
+
+Gần như toàn bộ và trong đó có mảng discount rule - từ nơi merchant tạo rule ở admin, tầng đồng bộ rule sang
+Shopify, logic tính giảm giá chạy trong Shopify Function, cho tới các block storefront
+hiển thị offer và ghi thông tin rule vào dòng giỏ hàng.
+
+**3. Quyết định kỹ thuật quan trọng nhất**
+
+Hai đường đi được tách bạch có chủ đích. Đường hiển thị phụ thuộc vào hạ tầng của
+chúng tôi: theme block nạp bundle widget từ static host. Nếu hạ tầng đó gặp sự cố,
+widget không hiện - khách vẫn mua hàng bình thường, chỉ là không thấy gợi ý.
+Đường tính tiền thì không: rule đã nằm sẵn trong metafield, Function chạy trên hạ
+tầng Shopify và không gọi ra ngoài. Nghĩa là hỏng phía chúng tôi thì mất doanh thu
+tăng thêm, nhưng không bao giờ làm sai giá hay chặn một đơn hàng.
+
+**4. Vấn đề khó nhất khi đã chạy production**
+
+Xung đột giữa chiết khấu do ứng dụng sinh ra và chiết khấu merchant tự tạo trong
+Shopify. Merchant chạy một đợt giảm giá của riêng họ, hoặc khách nhập mã giảm giá, và
+kết quả trong giỏ không như bất kỳ bên nào mong đợi - có trường hợp ưu đãi upsell biến
+mất, có trường hợp hai mức giảm cùng áp và tổng tiền thấp hơn mức merchant chấp nhận.
+
+Khó vì ba lý do. Thứ nhất, nó không tái hiện được bằng một giỏ hàng đơn giản: phải đúng
+tổ hợp rule của chúng tôi, chiết khấu của merchant, và thiết lập cho phép chồng nhau
+của từng cái. Thứ hai, quy tắc quyết định cái nào thắng nằm ở phía Shopify, không nằm
+trong code của tôi - tôi không thể đọc code để suy ra, chỉ có thể dựng từng trường hợp
+rồi quan sát kết quả. Thứ ba, merchant báo lại là "giá sai", một mô tả đúng nhưng không
+giúp khoanh vùng được gì, vì với họ mọi thứ chỉ là một con số trong giỏ.
+
+Hướng tôi chọn là phân tách phạm vi thay vì cố dàn xếp: chiết khấu của ứng dụng chỉ
+đăng ký đúng một loại (sản phẩm), và Function thoát ngay khi lần chạy không thuộc loại
+đó. Việc chiết khấu của chúng tôi có chồng được với chiết khấu merchant hay không thì
+để Shopify quyết theo thiết lập của họ - chúng tôi không ghi đè. Xung đột giữa các rule
+của chính ứng dụng thì xử lý riêng ở một tầng khác, bằng thứ tự ưu tiên cộng với bước
+loại trùng để hai rule không cùng giảm giá trên một dòng giỏ hàng.
+
+**5. Một quyết định sẽ làm khác đi**
+
+Ở giai đoạn đầu, tài liệu của Shopify về Function chưa đầy đủ, nên tôi tự gọi API và thử
+tay từng biến thể payload để tìm ra cấu trúc nào được chấp nhận. Việc đó tốn rất nhiều
+thời gian cho một việc mang tính dò tìm. Nếu làm lại, tôi sẽ để AI sinh và chạy một loạt
+trường hợp cùng lúc để dựng nhanh bản đồ những payload hợp lệ, rồi mới tự tay xác minh
+những trường hợp quan trọng.
+
+**Sơ đồ kiến trúc**
+
+```mermaid
+flowchart TB
+    subgraph ZB["Zotabox"]
+        ADMIN["Admin - merchant cấu hình rule"]
+        API["Laravel API"]
+        DB[("MySQL - rule gốc")]
+        STATIC["Static host<br/>widgets.js - bundle Vue<br/>+ cấu hình đã cache"]
+        ADMIN --> API --> DB
+        API -->|"publish cache"| STATIC
+    end
+
+    subgraph SHOPIFY["Shopify"]
+        META["Shop metafield<br/>zotasell/discount_rules<br/>(snapshot JSON)"]
+        THEME["Theme app extension<br/>block upsell: trang sản phẩm,<br/>trang giỏ hàng, trang chủ"]
+        CART["Giỏ hàng<br/>line attributes: ruleId,<br/>offerId, bundle tier"]
+        FUNC["Shopify Function (wasm)<br/>cart.lines.discounts.generate.run"]
+        CHECKOUT["Checkout"]
+    end
+
+    SHOPPER(["Khách mua hàng"])
+
+    API -->|"publish snapshot<br/>qua Admin API"| META
+    SHOPPER --> THEME
+    THEME -->|"nạp widget"| STATIC
+    THEME -->|"thêm sản phẩm<br/>+ gắn attribute"| CART
+    META --> FUNC
+    CART --> FUNC
+    FUNC -->|"mức giảm đã tính"| CART
+    CART --> CHECKOUT
+```
+
 ### D.2 Tự đánh giá bài nộp
 
+**Phần tôi tự tin nhất:** logic chuyển trạng thái. State machine nằm gọn trong một enum
+duy nhất, việc kiểm tra xảy ra trước khi ghi database, và có test khẳng định bản ghi
+không đổi khi transition bị từ chối. Tôi đã chạy đủ các tổ hợp - cả bốn transition hợp
+lệ, các chiều ngược, trạng thái cuối, giá trị không hợp lệ và id không tồn tại.
+
+**Phần tôi kém tự tin nhất:** không phải phần đã viết, mà là phần cố tình bỏ lại.
+Endpoint danh sách enquiry và endpoint đổi trạng thái vẫn chưa có xác thực - đây là lỗ
+hổng nghiêm trọng nhất tôi tìm được ở A.1, và tôi kết thúc bài tập mà nó vẫn còn nguyên.
+Tôi cho rằng đó là lựa chọn đúng khi chưa biết hệ thống đăng nhập hiện tại hoạt động thế
+nào, nhưng nó vẫn là thứ khiến tôi không thoải mái.
+
+Ở mức nhỏ hơn: tôi không chắc bốn giả định về field bắt buộc có khớp với form thật của
+Wayfinder không, và việc chuyển endpoint danh sách sang phân trang là thay đổi mà ngoài
+đời tôi sẽ không tự quyết một mình.
+
+**Nếu có thêm hai tiếng:**
+
+1. **Xác thực cho hai endpoint nội bộ** (khoảng 45 phút, giả sử hệ thống đã có sẵn cơ
+   chế đăng nhập). Đây là việc duy nhất trong danh sách mà bỏ qua thì có hậu quả thật
+   ngay lúc này.
+2. **Bổ sung test** (khoảng 40 phút): khẳng định dữ liệu sai không tạo record, khẳng
+   định endpoint danh sách không sinh N+1, và phủ đủ bốn transition hợp lệ. Hai test
+   hiện tại bảo vệ hai chỗ dễ hỏng nhất, nhưng còn mỏng.
+3. **Truy vấn liệt kê dữ liệu bất thường** (khoảng 20 phút) để Sales rà những enquiry
+   đang có trạng thái sai - không tự sửa, chỉ đưa ra danh sách, đúng như đã nêu ở A.4.
+4. **Ghi log khi transition bị từ chối** (khoảng 15 phút). Hiện tại lỗi chỉ trả về cho
+   người gọi rồi biến mất. Nếu Sales liên tục thử một chuyển đổi không được phép, đó là
+   tín hiệu quy trình thực tế khác với bốn transition trong đề - và không ai biết được
+   điều đó.
+
 ### D.3 Năm câu hỏi của tôi
+
+1. **Về vận hành khi có sự cố** Khi hệ thống có vấn đề ngoài giờ làm việc thì ai xử lý, và phát hiện bằng cách nào?
+    Trong tình huống ở Phần C, sự cố kéo dài ba ngày trước khi có người biết. Tôi muốn hiểu
+    hiện tại công ty phát hiện lỗi qua kênh nào - giám sát tự động, hay chờ khách và Sales
+    báo lại - và kỳ vọng với tôi ngoài giờ hành chính là gì.
+
+2. **Quy trình đưa code lên production hiện tại là gì, và quay lui bằng cách nào?** Đây
+   là câu tôi quan tâm nhất. Không có đường lùi thì mọi thay đổi đều đắt, và người mới
+   sẽ rất ngại đụng vào bất cứ thứ gì.
+
+3. **Quy mô thật** Mỗi tháng có khoảng bao nhiêu enquiry, và bao nhiêu phần trăm thành đơn? Con số này
+    đổi hẳn thứ tự ưu tiên kỹ thuật. Vài trăm enquiry một tháng thì hiệu năng chưa phải
+    vấn đề; vài chục nghìn thì những điểm tôi nêu ở phần hiệu năng cần làm sớm hơn nhiều.
+
+4. **Sáu tháng tới Wayfinder muốn đạt được gì?** Câu trả lời quyết định thứ tự ưu tiên.
+   Chuẩn bị mở thêm thị trường thì khác hẳn với giữ nguyên quy mô và giảm lỗi vận hành.
+
+5. **Khi Sales cần gấp một việc còn kỹ thuật thấy cần làm chậm lại, ai là người quyết?**
+   Tình huống ở Phần C là một ví dụ. Tôi muốn biết công ty xử lý loại xung đột đó ra
+   sao, vì nó ảnh hưởng tới công việc hàng ngày nhiều hơn bất kỳ lựa chọn công nghệ nào.
